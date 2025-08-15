@@ -4,7 +4,7 @@ require('dotenv').config();
 require('./services/hourlyPayoutService');
 
 const app = express();
-app.use(cors({ origin: 'http://localhost:4000' }));
+app.use(cors({ origin: 'https://silvofinance.onrender.com' }));
 app.use(express.json());
 
 const authRoutes = require('./routes/auth');
