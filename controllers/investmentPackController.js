@@ -178,7 +178,7 @@ const createInvestment = async (req, res) => {
     }
     
     // 4. Calculs financiers
-    const dailyReturn = (amount * pack.interest_rate / 100);
+    const dailyReturn = (amount * pack.interest_rate) / 100;
     const expectedReturn = amount + (dailyReturn * pack.duration_days);
     const hourlyPayout = dailyReturn / 24; // Pour distribution horaire
     

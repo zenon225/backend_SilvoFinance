@@ -2,7 +2,7 @@
 const pool = require('../db');
 const cron = require('node-cron');
 
-const processHourlyPayouts = async () => {
+const processIndividualHourlyPayouts = async () => {
   const client = await pool.connect();
   
   try {
@@ -11,22 +11,22 @@ const processHourlyPayouts = async () => {
     // 1. Récupérer les investissements éligibles
     const investments = await client.query(
       `SELECT * FROM investments 
-       WHERE status = 'active' 
-       AND NOW() BETWEEN start_date AND end_date
-       FOR UPDATE`
+       WHERE status = 'active'
+       AND remaining_hours > 0
+       AND NOW() >= start_date + 
+           (total_hours - remaining_hours + 1) * INTERVAL '1 hour'
+       FOR UPDATE SKIP LOCKED`
     );
+    
+    console.log(`🔍 ${investments.rows.length} investissements à traiter`);
     
     // 2. Traiter chaque investissement
     for (const investment of investments.rows) {
-      // Vérifier si c'est le premier paiement
       const isFirstPayout = investment.total_hours === investment.remaining_hours;
-      
-      // Vérifier si c'est le dernier paiement
       const isLastPayout = investment.remaining_hours === 1;
       
       // Créer ou mettre à jour l'earning
       if (isFirstPayout) {
-        // Insertion initiale dans earnings
         await client.query(
           `INSERT INTO earnings (
             user_id,
@@ -46,7 +46,6 @@ const processHourlyPayouts = async () => {
           ]
         );
         
-        // Notification de début d'investissement
         await client.query(
           `INSERT INTO notifications (
             user_id,
@@ -63,7 +62,6 @@ const processHourlyPayouts = async () => {
           ]
         );
       } else {
-        // Mise à jour de l'earning existant - CORRECTION ICI
         await client.query(
           `UPDATE earnings 
            SET 
@@ -110,6 +108,8 @@ const processHourlyPayouts = async () => {
           ]
         );
       }
+      
+      console.log(`✅ Paiement de ${investment.hourly_payout} XOF effectué pour l'investissement #${investment.id}`);
     }
     
     await client.query('COMMIT');
@@ -121,7 +121,10 @@ const processHourlyPayouts = async () => {
   }
 };
 
-// Lancer toutes les heures
-cron.schedule('0 * * * *', processHourlyPayouts);
+// Vérifier toutes les minutes pour une précision horaire
+cron.schedule('* * * * *', () => {
+  console.log(`⏳ Vérification des paiements à ${new Date()}`);
+  processIndividualHourlyPayouts().catch(console.error);
+});
 
-module.exports = { processHourlyPayouts };
+module.exports = { processIndividualHourlyPayouts };

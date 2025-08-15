@@ -12,12 +12,17 @@ const authenticate = require('./middleware/authMiddleware');
 const dashboardRoutes = require('./routes/dashboard');
 const investmentPackRoutes = require('./routes/investmentPackRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const earningRoutes = require('./routes/earningRoutes');
+const referralRoutes = require('./routes/referralRoutes');
 
 // Routes publiques
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', authenticate, dashboardRoutes);
 app.use('/api/investment-packs', investmentPackRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
+app.use('/api/earnings', authenticate, earningRoutes);
+app.use('/api/referral', authenticate, referralRoutes);
+
 
 
 

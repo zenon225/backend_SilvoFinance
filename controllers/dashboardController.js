@@ -19,27 +19,37 @@ const getUserData = async (req, res) => {
 
     // 2. Récupération des investissements actifs
     const investmentsQuery = `
-      SELECT 
-        i.id, 
-        p.name AS pack_name,
-        i.amount::numeric(10,2) AS amount,
-        i.expected_return::numeric(10,2) AS expected_return,
-        i.start_date, 
-        i.end_date,
-        (i.expected_return - i.amount)::numeric(10,2) AS total_earnings,
-        GREATEST(EXTRACT(DAY FROM (i.end_date - NOW()))::integer, 0) AS days_remaining,
-        CASE
-          WHEN i.end_date <= NOW() THEN 100.00
-          WHEN DATE_PART('day', i.end_date - i.start_date) = 0 THEN 0.00
-          ELSE LEAST(
-            (DATE_PART('day', NOW() - i.start_date)::numeric / 
-            DATE_PART('day', i.end_date - i.start_date)::numeric * 100),
-            100.00
-          )::numeric(5,2)
-        END AS progress
-      FROM investments i
-      JOIN investment_packs p ON i.pack_id = p.id
-      WHERE i.user_id = $1 AND i.status = 'active' AND i.end_date > NOW()`;
+  SELECT 
+    i.id, 
+    p.name AS pack_name,
+    i.amount::numeric(10,2) AS amount,
+    i.expected_return::numeric(10,2) AS expected_return,
+    i.start_date, 
+    i.end_date,
+    (i.expected_return - i.amount)::numeric(10,2) AS total_earnings,
+    GREATEST(EXTRACT(DAY FROM (i.end_date - NOW()))::integer, 0) AS days_remaining,
+    CASE
+      WHEN i.end_date <= NOW() THEN 100.00
+      WHEN DATE_PART('day', i.end_date - i.start_date) = 0 THEN 0.00
+      ELSE LEAST(
+        (DATE_PART('day', NOW() - i.start_date)::numeric / 
+        DATE_PART('day', i.end_date - i.start_date)::numeric * 100),
+        100.00
+      )::numeric(5,2)
+    END AS progress,
+    (
+      SELECT COALESCE(SUM(e.gain_disponible), 0)::numeric(10,2)
+      FROM earnings e
+      WHERE e.id_invest = i.id
+    ) AS available_earnings,
+    (
+      SELECT COALESCE(SUM(e.retour_gain), 0)::numeric(10,2)
+      FROM earnings e
+      WHERE e.id_invest = i.id
+    ) AS total_returned
+  FROM investments i
+  JOIN investment_packs p ON i.pack_id = p.id
+  WHERE i.user_id = $1 AND i.status = 'active' AND i.end_date > NOW()`;
     
     const investmentsResult = await pool.query(investmentsQuery, [userId]);
 
@@ -55,9 +65,12 @@ const getUserData = async (req, res) => {
       WHERE user_id = $1`;
 
     const availableEarningsQuery = `
-      SELECT COALESCE(SUM(gain_disponible)::float, 0) AS available_earnings
-      FROM earnings 
-      WHERE user_id = $1 AND gain_disponible > 0`;
+      SELECT
+  id_invest,
+  gain_disponible
+FROM earnings
+WHERE user_id = $1 AND gain_disponible > 0;
+`;
     
     const [referralResult, earningsResult, availableEarningsResult] = await Promise.all([
       pool.query(referralQuery, [userId]),
