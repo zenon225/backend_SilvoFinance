@@ -1,6 +1,6 @@
-const pool = require('../db');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
+const pool = require("../db");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 const register = async (req, res) => {
   const { full_name, email, phone, password } = req.body;
@@ -14,7 +14,13 @@ const register = async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('❌ Erreur PostgreSQL:', err.message); // 👈 Ajoute ceci
+    console.error("❌ Erreur PostgreSQL:", err.message);
+
+    // Vérifie si l'erreur est une violation de contrainte unique sur l'email
+    if (err.code === "23505" && err.constraint === "users_email_key") {
+      return res.status(400).json({ error: "Cet email est déjà utilisé" });
+    }
+
     res.status(500).json({ error: "Erreur lors de l'inscription" });
   }
 };
@@ -22,12 +28,15 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   const { email, password } = req.body;
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [
+      email,
+    ]);
     const user = result.rows[0];
-    if (!user) return res.status(401).json({ error: 'Utilisateur non trouvé' });
+    if (!user) return res.status(401).json({ error: "Utilisateur non trouvé" });
 
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return res.status(401).json({ error: 'Mot de passe incorrect' });
+    if (!match)
+      return res.status(401).json({ error: "Mot de passe incorrect" });
 
     const token = jwt.sign(
       { id: user.id, email: user.email },
@@ -35,11 +44,13 @@ const login = async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    res.json({ token, user: { id: user.id, full_name: user.full_name, email: user.email } });
+    res.json({
+      token,
+      user: { id: user.id, full_name: user.full_name, email: user.email },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Erreur lors de la connexion' });
+    res.status(500).json({ error: "Erreur lors de la connexion" });
   }
 };
-
 
 module.exports = { register, login };
