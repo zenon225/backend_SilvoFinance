@@ -5,18 +5,18 @@ const jwt = require("jsonwebtoken");
 const register = async (req, res) => {
   const { full_name, email, phone, password } = req.body;
   try {
+    const normalizedEmail = email.toLowerCase();
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
       `INSERT INTO users (full_name, email, phone, password_hash, balance, created_at, is_verified)
        VALUES ($1, $2, $3, $4, 0, NOW(), false)
        RETURNING id, full_name, email, phone`,
-      [full_name, email, phone, hashedPassword]
+      [full_name, normalizedEmail, phone, hashedPassword]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("❌ Erreur PostgreSQL:", err.message);
 
-    // Vérifie si l'erreur est une violation de contrainte unique sur l'email
     if (err.code === "23505" && err.constraint === "users_email_key") {
       return res.status(400).json({ error: "Cet email est déjà utilisé" });
     }
@@ -28,8 +28,9 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   const { email, password } = req.body;
   try {
+    const normalizedEmail = email.toLowerCase();
     const result = await pool.query("SELECT * FROM users WHERE email = $1", [
-      email,
+      normalizedEmail,
     ]);
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: "Utilisateur non trouvé" });
