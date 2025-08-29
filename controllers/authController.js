@@ -3,17 +3,64 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const register = async (req, res) => {
-  const { full_name, email, phone, password } = req.body;
+  const { full_name, email, phone, password, referral_code } = req.body;
   try {
     const normalizedEmail = email.toLowerCase();
     const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      `INSERT INTO users (full_name, email, phone, password_hash, balance, created_at, is_verified)
-       VALUES ($1, $2, $3, $4, 0, NOW(), false)
-       RETURNING id, full_name, email, phone`,
-      [full_name, normalizedEmail, phone, hashedPassword]
-    );
-    res.status(201).json(result.rows[0]);
+
+    // Démarrer une transaction
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      // Insérer l'utilisateur
+      const userResult = await client.query(
+        `INSERT INTO users (full_name, email, phone, password_hash, balance, created_at, is_verified)
+         VALUES ($1, $2, $3, $4, 0, NOW(), false)
+         RETURNING id, full_name, email, phone`,
+        [full_name, normalizedEmail, phone, hashedPassword]
+      );
+
+      // Gérer le parrainage si un code est fourni
+      if (referral_code) {
+        // Vérifier si le code de parrainage existe
+        const referrerResult = await client.query(
+          `SELECT id FROM users WHERE referral_code = $1 OR id = (SELECT user_id FROM referral_codes WHERE code = $1)`,
+          [referral_code]
+        );
+
+        if (referrerResult.rows.length > 0) {
+          const referrerId = referrerResult.rows[0].id;
+          const newUserId = userResult.rows[0].id;
+
+          // Enregistrer la relation de parrainage
+          await client.query(
+            `INSERT INTO referrals (referrer_id, referred_id, referral_code, created_at)
+             VALUES ($1, $2, $3, NOW())`,
+            [referrerId, newUserId, referral_code]
+          );
+
+          // Créditer le parrain (bonus de 10% du premier investissement futur)
+          await client.query(
+            `UPDATE users SET pending_referral_bonus = COALESCE(pending_referral_bonus, 0) + 5000 WHERE id = $1`,
+            [referrerId]
+          );
+
+          console.log(
+            `🎁 Parrainage enregistré: ${referrerId} -> ${newUserId}`
+          );
+        }
+      }
+
+      await client.query("COMMIT");
+      res.status(201).json(userResult.rows[0]);
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error("❌ Erreur PostgreSQL:", err.message);
 

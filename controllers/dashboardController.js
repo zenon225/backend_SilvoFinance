@@ -1,18 +1,18 @@
-const pool = require('../db');
+const pool = require("../db");
 
 const getUserData = async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     // 1. Récupération des données utilisateur
     const userQuery = `
       SELECT id, full_name, email, phone, balance, created_at 
       FROM users 
       WHERE id = $1`;
     const userResult = await pool.query(userQuery, [userId]);
-    
+
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+      return res.status(404).json({ error: "Utilisateur non trouvé" });
     }
 
     const user = userResult.rows[0];
@@ -50,15 +50,15 @@ const getUserData = async (req, res) => {
   FROM investments i
   JOIN investment_packs p ON i.pack_id = p.id
   WHERE i.user_id = $1 AND i.status = 'active' AND i.end_date > NOW()`;
-    
+
     const investmentsResult = await pool.query(investmentsQuery, [userId]);
 
     // 3. Requêtes pour les statistiques
     const referralQuery = `
-      SELECT COALESCE(SUM(bonus)::float, 0) AS total_referral_earnings
+      SELECT COALESCE(COUNT(*), 0) AS total_referrals
       FROM referrals 
       WHERE referrer_id = $1`;
-    
+
     const earningsQuery = `
       SELECT COALESCE(SUM(retour_gain)::float, 0) AS total_earnings
       FROM earnings 
@@ -71,12 +71,13 @@ const getUserData = async (req, res) => {
 FROM earnings
 WHERE user_id = $1 AND gain_disponible > 0;
 `;
-    
-    const [referralResult, earningsResult, availableEarningsResult] = await Promise.all([
-      pool.query(referralQuery, [userId]),
-      pool.query(earningsQuery, [userId]),
-      pool.query(availableEarningsQuery, [userId])
-    ]);
+
+    const [referralResult, earningsResult, availableEarningsResult] =
+      await Promise.all([
+        pool.query(referralQuery, [userId]),
+        pool.query(earningsQuery, [userId]),
+        pool.query(availableEarningsQuery, [userId]),
+      ]);
 
     // 4. Historique des transactions (version simplifiée sans hasCreatedAtColumn)
     const investmentsHistory = await pool.query(
@@ -109,14 +110,14 @@ WHERE user_id = $1 AND gain_disponible > 0;
     const referralsHistory = await pool.query(
       `SELECT 
         id,
-        'referral' AS type,
-        'Commission parrainage' AS description,
-        bonus::float AS amount,
-        created_at AS date
-       FROM referrals
-       WHERE referrer_id = $1
-       ORDER BY created_at DESC
-       LIMIT 3`,
+       'referral' AS type,
+    'Commission parrainage' AS description,
+    5000::float AS amount,
+    created_at AS date
+   FROM referrals
+   WHERE referrer_id = $1
+   ORDER BY created_at DESC
+   LIMIT 3`,
       [userId]
     );
 
@@ -124,17 +125,19 @@ WHERE user_id = $1 AND gain_disponible > 0;
     const transactions = [
       ...investmentsHistory.rows,
       ...earningsHistory.rows,
-      ...referralsHistory.rows
-    ].sort((a, b) => (b.date || b.id) - (a.date || a.id)).slice(0, 10);
+      ...referralsHistory.rows,
+    ]
+      .sort((a, b) => (b.date || b.id) - (a.date || a.id))
+      .slice(0, 10);
 
     // 6. Fonction de niveau
     const getLevel = (balance) => {
       const balanceNum = parseFloat(balance) || 0;
-      if (balanceNum >= 1000000) return 'Diamant';
-      if (balanceNum >= 500000) return 'Platine';
-      if (balanceNum >= 250000) return 'Or';
-      if (balanceNum >= 100000) return 'Argent';
-      return 'Bronze';
+      if (balanceNum >= 1000000) return "Diamant";
+      if (balanceNum >= 500000) return "Platine";
+      if (balanceNum >= 250000) return "Or";
+      if (balanceNum >= 100000) return "Argent";
+      return "Bronze";
     };
 
     // 7. Construction de la réponse
@@ -143,28 +146,31 @@ WHERE user_id = $1 AND gain_disponible > 0;
         full_name: user.full_name,
         email: user.email,
         balance: parseFloat(user.balance) || 0,
-        totalInvested: investmentsResult.rows.reduce((sum, inv) => sum + parseFloat(inv.amount || 0), 0),
+        totalInvested: investmentsResult.rows.reduce(
+          (sum, inv) => sum + parseFloat(inv.amount || 0),
+          0
+        ),
         totalEarnings: parseFloat(earningsResult.rows[0]?.total_earnings) || 0,
         activeInvestments: investmentsResult.rowCount || 0,
-        referralEarnings: parseFloat(referralResult.rows[0]?.total_referral_earnings) || 0,
-        availableEarnings: parseFloat(availableEarningsResult.rows[0]?.available_earnings) || 0,
-        level: getLevel(user.balance)
+        referralEarnings: 0,
+        availableEarnings:
+          parseFloat(availableEarningsResult.rows[0]?.available_earnings) || 0,
+        level: getLevel(user.balance),
       },
       activeInvestments: investmentsResult.rows,
-      transactions
+      transactions,
     };
 
     res.json(response);
-
   } catch (err) {
-    console.error('Erreur dashboard:', {
+    console.error("Erreur dashboard:", {
       message: err.message,
       stack: err.stack,
-      query: err.query || 'Non disponible'
+      query: err.query || "Non disponible",
     });
-    res.status(500).json({ 
-      error: 'Erreur serveur',
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    res.status(500).json({
+      error: "Erreur serveur",
+      details: process.env.NODE_ENV === "development" ? err.message : undefined,
     });
   }
 };
